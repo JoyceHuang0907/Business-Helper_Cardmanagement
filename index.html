@@ -16,6 +16,8 @@
         @keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
         .business-gradient { background: linear-gradient(135deg, #3C2415 0%, #5D4037 50%, #6D4C41 100%); }
         .card-image { object-fit: cover; border-radius: 8px; }
+        .delete-loading { animation: pulse 1.5s infinite; }
+        @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.5; } }
     </style>
 </head>
 <body class="bg-gray-50 min-h-screen">
@@ -28,8 +30,29 @@
 
     <!-- Main Content -->
     <main class="max-w-7xl mx-auto px-6 py-8">
+        <!-- Webhook Parameter Warning -->
+        <div id="webhookWarning" class="hidden mb-6">
+            <div class="bg-red-50 border border-red-200 rounded-xl p-6 text-center">
+                <svg class="w-12 h-12 text-red-500 mx-auto mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.964-.833-2.732 0L3.732 16.5c-.77.833.192 2.5 1.732 2.5z"></path>
+                </svg>
+                <h3 class="text-lg font-semibold text-red-800 mb-2">缺少必要參數</h3>
+                <p class="text-red-600 mb-4">請在網址中加入以下參數：</p>
+                <div class="bg-white border border-red-200 rounded-lg p-4 text-left text-sm font-mono">
+                    <p class="mb-2"><strong>載入資料 Webhook：</strong> ?loadWebhook=YOUR_LOAD_WEBHOOK_URL</p>
+                    <p><strong>刪除資料 Webhook：</strong> &deleteWebhook=YOUR_DELETE_WEBHOOK_URL</p>
+                </div>
+                <p class="text-red-600 mt-4 text-sm">
+                    範例：<br>
+                    <span class="bg-gray-100 text-gray-800 px-2 py-1 rounded text-xs break-all">
+                        ?loadWebhook=https://hook.us1.make.com/xxxxx&deleteWebhook=https://hook.us1.make.com/yyyyy
+                    </span>
+                </p>
+            </div>
+        </div>
+
         <!-- Search Section -->
-        <div class="mb-8">
+        <div id="searchSection" class="mb-8">
             <div class="relative max-w-2xl mx-auto">
                 <input 
                     type="text" 
@@ -46,7 +69,7 @@
         </div>
 
         <!-- Loading State -->
-        <div id="loadingState" class="text-center py-12">
+        <div id="loadingState" class="hidden text-center py-12">
             <div class="loading-spinner w-12 h-12 border-4 border-amber-200 border-t-amber-700 rounded-full mx-auto mb-4"></div>
             <p class="text-gray-600 text-lg">正在載入名片資料...</p>
         </div>
@@ -58,7 +81,7 @@
                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.964-.833-2.732 0L3.732 16.5c-.77.833.192 2.5 1.732 2.5z"></path>
                 </svg>
                 <h3 class="text-lg font-semibold text-red-800 mb-2">載入失敗</h3>
-                <p class="text-red-600 mb-4">無法載入名片資料，請稍後再試</p>
+                <p class="text-red-600 mb-4" id="errorMessage">無法載入名片資料，請稍後再試</p>
                 <button onclick="loadData()" class="bg-red-600 text-white px-6 py-2 rounded-lg hover:bg-red-700 transition-colors">
                     重新載入
                 </button>
@@ -80,118 +103,226 @@
         </div>
     </main>
 
+    <!-- Delete Confirmation Modal -->
+    <div id="deleteModal" class="hidden fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+        <div class="bg-white rounded-xl p-6 max-w-md w-full mx-4 shadow-2xl">
+            <div class="text-center">
+                <svg class="w-16 h-16 text-red-500 mx-auto mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path>
+                </svg>
+                <h3 class="text-lg font-semibold text-gray-900 mb-2">確認刪除</h3>
+                <p class="text-gray-600 mb-6">確定要刪除 <span id="deleteTargetName" class="font-semibold"></span> 的名片嗎？此操作無法復原。</p>
+                <div class="flex gap-3 justify-center">
+                    <button onclick="cancelDelete()" class="px-4 py-2 bg-gray-300 text-gray-700 rounded-lg hover:bg-gray-400 transition-colors">
+                        取消
+                    </button>
+                    <button id="confirmDeleteBtn" onclick="confirmDelete()" class="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors">
+                        確認刪除
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
     <script>
         let allCards = [];
-        const WEBHOOK_URL = 'https://hook.us1.make.com/bpdkjgt6pjicvfxm9kjwxg43soq5mvdj';
+        let deleteTarget = null;
+        let LOAD_WEBHOOK_URL = '';
+        let DELETE_WEBHOOK_URL = '';
 
-        // Sample data for preview (will be replaced by webhook data)
-        const sampleData = [
+        // 您提供的真實資料（作為備用）
+        const realData = [
             {
-                姓名: '王大明',
-                英文名: 'David Wang',
-                公司行號: '台灣科技股份有限公司',
-                職稱: '業務經理',
-                'E-mail信箱': 'david.wang@techcorp.com.tw',
-                電話: '02-2345-6789',
-                手機: '0912-345-678',
-                傳真號碼: '02-2345-6790',
-                公司地址: '台北市信義區信義路五段7號35樓',
-                公司網站: 'www.techcorp.com.tw',
-                公司統編: '12345678',
-                LineID: 'davidwang123',
-                名片圖檔網址: 'https://via.placeholder.com/300x180/8B4513/FFFFFF?text=王大明+名片',
-                資料修改表單連結: 'https://forms.google.com/sample1'
+                "姓名": "李姿瑩",
+                "英文名": "Zin",
+                "公司行號": "禹動科技整合股份有限公司",
+                "職稱": "專案顧問 Project Consultant",
+                "E-mail信箱": "zin@smart4a.tw",
+                "電話": "",
+                "手機": "+886 975 390 798",
+                "傳真號碼": "",
+                "公司地址": "106433 台北市大安區忠孝東路四段300號5樓",
+                "公司網站": "smart4a.tw",
+                "公司統編": "94238652",
+                "LineID": "",
+                "名片圖檔網址": "",
+                "lineUserId": "Ub1457c93602bcaddb8be00d3ccded53d",
+                "資料修改表單連結": "https://joycehuang0907.github.io/Business-Helper_CardUpload/?webhook=https://hook.us1.make.com/n9h3p4i9a449irikbjfm8gqklxrjkkkh&lineUserId=Ub1457c93602bcaddb8be00d3ccded53d&name=%E6%9D%8E%E5%A7%BF%E7%91%A9&englishName=Zin&company=%E7%A6%B9%E5%8B%95%E7%A7%91%E6%8A%80%E6%95%B4%E5%90%88%E8%82%A1%E4%BB%BD%E6%9C%89%E9%99%90%E5%85%AC%E5%8F%B8&position=%E5%B0%88%E6%A1%88%E9%A1%A7%E5%95%8F%20Project%20Consultant&email=zin@smart4a.tw&phone=&mobile=+886 975 390 798&fax=&address=106433%20%E5%8F%B0%E5%8C%97%E5%B8%82%E5%A4%A7%E5%AE%89%E5%8D%80%E5%BF%A0%E5%AD%9D%E6%9D%B1%E8%B7%AF%E5%9B%9B%E6%AE%B5300%E8%99%9F5%E6%A8%93&website=smart4a.tw&taxNumber=94238652&lineId=&cardImage="
             },
             {
-                姓名: '李美華',
-                英文名: 'Michelle Lee',
-                公司行號: '創新設計工作室',
-                職稱: '創意總監',
-                'E-mail信箱': 'michelle@creative-studio.tw',
-                電話: '02-8765-4321',
-                手機: '0987-654-321',
-                傳真號碼: '',
-                公司地址: '台北市大安區敦化南路二段216號8樓',
-                公司網站: 'creative-studio.tw',
-                公司統編: '87654321',
-                LineID: 'michelle_design',
-                名片圖檔網址: '',
-                資料修改表單連結: 'https://forms.google.com/sample2'
-            },
-            {
-                姓名: '陳志強',
-                英文名: 'Johnson Chen',
-                公司行號: '金融投資顧問有限公司',
-                職稱: '資深顧問',
-                'E-mail信箱': 'johnson.chen@finance-advisor.com',
-                電話: '02-1234-5678',
-                手機: '0955-123-456',
-                傳真號碼: '02-1234-5679',
-                公司地址: '台北市中正區重慶南路一段122號12樓',
-                公司網站: 'www.finance-advisor.com',
-                公司統編: '11223344',
-                LineID: 'johnson_finance',
-                名片圖檔網址: 'https://via.placeholder.com/300x180/A0522D/FFFFFF?text=陳志強+名片',
-                資料修改表單連結: 'https://forms.google.com/sample3'
-            },
-            {
-                姓名: '張雅婷',
-                英文名: 'Tina Chang',
-                公司行號: '國際貿易企業社',
-                職稱: '國外業務主管',
-                'E-mail信箱': 'tina.chang@international-trade.tw',
-                電話: '02-9876-5432',
-                手機: '0933-987-654',
-                傳真號碼: '02-9876-5433',
-                公司地址: '新北市板橋區文化路二段182號6樓',
-                公司網站: 'international-trade.tw',
-                公司統編: '99887766',
-                LineID: 'tina_trade',
-                名片圖檔網址: '',
-                資料修改表單連結: 'https://forms.google.com/sample4'
+                "姓名": "黃竹瑄",
+                "英文名": "Joyce",
+                "公司行號": "禹動科技整合股份有限公司",
+                "職稱": "專案經理 Project Manager",
+                "E-mail信箱": "joyce@smart4a.tw",
+                "電話": "",
+                "手機": "+886972763153",
+                "傳真號碼": "",
+                "公司地址": "100024 台北市中正區忠孝東路一段76號3樓之一",
+                "公司網站": "smart4a.tw",
+                "公司統編": "94238652",
+                "LineID": "",
+                "名片圖檔網址": "https://lh3.googleusercontent.com/d/1McWJqPSEGbEh5tIwrdrl4ee3yeAod4lr",
+                "lineUserId": "Ub82a39b64d3f46f5fe205dd9752f337f",
+                "資料修改表單連結": "https://joycehuang0907.github.io/Business-Helper_CardUpload/?webhook=https://hook.us1.make.com/n9h3p4i9a449irikbjfm8gqklxrjkkkh&lineUserId=Ub82a39b64d3f46f5fe205dd9752f337f&name=%E9%BB%83%E7%AB%B9%E7%91%84&englishName=Joyce&company=%E7%A6%B9%E5%8B%95%E7%A7%91%E6%8A%80%E6%95%B4%E5%90%88%E8%82%A1%E4%BB%BD%E6%9C%89%E9%99%90%E5%85%AC%E5%8F%B8&position=%E5%B0%88%E6%A1%88%E7%B6%93%E7%90%86%20Project%20Manager&email=joyce@smart4a.tw&phone=&mobile=+886972763153&fax=&address=100024%20%E5%8F%B0%E5%8C%97%E5%B8%82%E4%B8%AD%E6%AD%A3%E5%8D%80%E5%BF%A0%E5%AD%9D%E6%9D%B1%E8%B7%AF%E4%B8%80%E6%AE%B576%E8%99%9F3%E6%A8%93%E4%B9%8B%E4%B8%80&website=smart4a.tw&taxNumber=94238652&lineId=&cardImage=https://lh3.googleusercontent.com/d/1McWJqPSEGbEh5tIwrdrl4ee3yeAod4lr"
             }
         ];
 
-        // Load data on page load
-        window.addEventListener('load', loadData);
-
-        async function loadData() {
-            const loadingState = document.getElementById('loadingState');
-            const errorState = document.getElementById('errorState');
-            const cardsContainer = document.getElementById('cardsContainer');
+        // 從 URL 參數獲取 webhook 網址
+        function getUrlParameters() {
+            const urlParams = new URLSearchParams(window.location.search);
+            const loadWebhook = urlParams.get('loadWebhook');
+            const deleteWebhook = urlParams.get('deleteWebhook');
             
-            // Show loading state
-            loadingState.classList.remove('hidden');
-            errorState.classList.add('hidden');
-            cardsContainer.classList.add('hidden');
+            console.log('URL 參數:', { loadWebhook, deleteWebhook });
+            
+            return { loadWebhook, deleteWebhook };
+        }
+
+        // 檢查並設定 webhook 網址
+        function initializeWebhooks() {
+            const { loadWebhook, deleteWebhook } = getUrlParameters();
+            
+            if (!loadWebhook || !deleteWebhook) {
+                console.warn('缺少必要的 webhook 參數');
+                showWebhookWarning();
+                return false;
+            }
+            
+            // 驗證 URL 格式
+            try {
+                new URL(loadWebhook);
+                new URL(deleteWebhook);
+            } catch (error) {
+                console.error('Webhook URL 格式不正確:', error);
+                showWebhookWarning();
+                return false;
+            }
+            
+            LOAD_WEBHOOK_URL = loadWebhook;
+            DELETE_WEBHOOK_URL = deleteWebhook;
+            
+            console.log('Webhook URLs 設定完成:', {
+                load: LOAD_WEBHOOK_URL,
+                delete: DELETE_WEBHOOK_URL
+            });
+            
+            return true;
+        }
+
+        // 顯示 webhook 參數警告
+        function showWebhookWarning() {
+            document.getElementById('webhookWarning').classList.remove('hidden');
+            document.getElementById('searchSection').classList.add('hidden');
+            document.getElementById('loadingState').classList.add('hidden');
+            document.getElementById('errorState').classList.add('hidden');
+            document.getElementById('cardsContainer').classList.add('hidden');
+            document.getElementById('noResults').classList.add('hidden');
+        }
+
+        // 隱藏所有狀態
+        function hideAllStates() {
+            document.getElementById('webhookWarning').classList.add('hidden');
+            document.getElementById('loadingState').classList.add('hidden');
+            document.getElementById('errorState').classList.add('hidden');
+            document.getElementById('cardsContainer').classList.add('hidden');
+            document.getElementById('noResults').classList.add('hidden');
+            document.getElementById('searchSection').classList.remove('hidden');
+        }
+
+        // 載入資料
+        async function loadData() {
+            if (!LOAD_WEBHOOK_URL) {
+                console.error('載入 Webhook URL 未設定');
+                showWebhookWarning();
+                return;
+            }
+
+            hideAllStates();
+            document.getElementById('loadingState').classList.remove('hidden');
 
             try {
-                const response = await fetch(WEBHOOK_URL, {
-                    method: 'GET',
-                    headers: {
-                        'Content-Type': 'application/json',
-                    }
-                });
-
+                console.log('從 Webhook 載入資料...', LOAD_WEBHOOK_URL);
+                
+                const response = await fetch(LOAD_WEBHOOK_URL);
+                
                 if (!response.ok) {
-                    throw new Error('Network response was not ok');
+                    throw new Error(`HTTP ${response.status}: ${response.statusText}`);
                 }
 
-                const data = await response.json();
-                allCards = Array.isArray(data) ? data : [];
+                // 先取得原始文字內容來檢查
+                const rawText = await response.text();
                 
-                loadingState.classList.add('hidden');
+                // 嘗試修復常見的 JSON 問題
+                let cleanedText = rawText;
+                
+                // 移除可能的 BOM 字符
+                cleanedText = cleanedText.replace(/^\uFEFF/, '');
+                
+                // 移除末尾多餘的逗號
+                cleanedText = cleanedText.replace(/,(\s*[}\]])/g, '$1');
+                
+                // 嘗試解析 JSON
+                let data;
+                try {
+                    data = JSON.parse(cleanedText);
+                } catch (cleanError) {
+                    console.error('清理後仍無法解析 JSON:', cleanError);
+                    
+                    // 如果還是失敗，嘗試更積極的修復
+                    try {
+                        // 可能是多個 JSON 物件連在一起，嘗試分割
+                        const jsonObjects = cleanedText.trim().split('}\n{');
+                        if (jsonObjects.length > 1) {
+                            // 修復分割後的 JSON 格式
+                            const fixedObjects = jsonObjects.map((obj, index) => {
+                                if (index > 0 && !obj.startsWith('{')) obj = '{' + obj;
+                                if (index < jsonObjects.length - 1 && !obj.endsWith('}')) obj = obj + '}';
+                                return obj;
+                            });
+                            
+                            data = fixedObjects.map(obj => JSON.parse(obj));
+                        } else {
+                            throw cleanError;
+                        }
+                    } catch (finalError) {
+                        throw new Error(`JSON 解析失敗: ${finalError.message}`);
+                    }
+                }
+
+                // 確保資料是陣列格式
+                if (!Array.isArray(data)) {
+                    data = [data];
+                }
+
+                if (data.length === 0) {
+                    throw new Error('Webhook 回傳空陣列');
+                }
+
+                console.log(`成功載入 ${data.length} 筆資料`);
+                allCards = data;
+                
+                hideAllStates();
                 displayCards(allCards);
-                
+
             } catch (error) {
-                console.error('Error loading data, using sample data:', error);
-                // Use sample data when webhook fails
-                allCards = sampleData;
-                loadingState.classList.add('hidden');
-                displayCards(allCards);
+                console.error('Webhook 載入失敗:', error);
+                
+                // 顯示錯誤並使用備用資料
+                document.getElementById('errorMessage').textContent = `載入失敗: ${error.message}，使用備用資料`;
+                document.getElementById('errorState').classList.remove('hidden');
+                
+                // 3秒後自動切換到備用資料
+                setTimeout(() => {
+                    allCards = realData;
+                    hideAllStates();
+                    displayCards(allCards);
+                    showNotification('已切換至備用資料', 'info');
+                }, 3000);
             }
         }
 
+        // 顯示名片
         function displayCards(cards) {
             const container = document.getElementById('cardsContainer');
             const noResults = document.getElementById('noResults');
@@ -208,6 +339,109 @@
             container.innerHTML = cards.map(card => createCardHTML(card)).join('');
         }
 
+        // 顯示刪除確認對話框
+        function showDeleteModal(card) {
+            if (!DELETE_WEBHOOK_URL) {
+                showNotification('刪除功能未配置，請檢查 deleteWebhook 參數', 'error');
+                return;
+            }
+            
+            deleteTarget = card;
+            document.getElementById('deleteTargetName').textContent = card.姓名 || '未提供姓名';
+            document.getElementById('deleteModal').classList.remove('hidden');
+        }
+
+        // 取消刪除
+        function cancelDelete() {
+            deleteTarget = null;
+            document.getElementById('deleteModal').classList.add('hidden');
+        }
+
+        // 確認刪除
+        async function confirmDelete() {
+            if (!deleteTarget || !DELETE_WEBHOOK_URL) return;
+
+            const confirmBtn = document.getElementById('confirmDeleteBtn');
+            const originalText = confirmBtn.textContent;
+            
+            // 顯示載入狀態
+            confirmBtn.textContent = '刪除中...';
+            confirmBtn.disabled = true;
+            confirmBtn.classList.add('delete-loading');
+
+            try {
+                const deleteData = {
+                    function: '刪除資料',
+                    name: deleteTarget.姓名 || '',
+                    email: deleteTarget['E-mail信箱'] || '',
+                    lineUserId: deleteTarget.lineUserId || ''
+                };
+
+                console.log('發送刪除請求:', deleteData, 'URL:', DELETE_WEBHOOK_URL);
+
+                const response = await fetch(DELETE_WEBHOOK_URL, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify(deleteData)
+                });
+
+                if (response.ok) {
+                    console.log('刪除請求已成功發送');
+                    
+                    // 從本地陣列中移除該名片
+                    allCards = allCards.filter(card => 
+                        card.姓名 !== deleteTarget.姓名 || 
+                        card['E-mail信箱'] !== deleteTarget['E-mail信箱']
+                    );
+                    
+                    // 重新顯示名片
+                    displayCards(allCards);
+                    
+                    // 關閉對話框
+                    cancelDelete();
+                    
+                    // 顯示成功訊息
+                    showNotification('名片已成功刪除', 'success');
+                } else {
+                    throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+                }
+
+            } catch (error) {
+                console.error('刪除失敗:', error);
+                showNotification('刪除失敗，請稍後再試', 'error');
+            } finally {
+                // 恢復按鈕狀態
+                confirmBtn.textContent = originalText;
+                confirmBtn.disabled = false;
+                confirmBtn.classList.remove('delete-loading');
+            }
+        }
+
+        // 顯示通知訊息
+        function showNotification(message, type = 'info') {
+            const notification = document.createElement('div');
+            const bgColor = type === 'success' ? 'bg-green-500' : type === 'error' ? 'bg-red-500' : 'bg-blue-500';
+            
+            notification.className = `fixed top-4 right-4 ${bgColor} text-white px-6 py-3 rounded-lg shadow-lg z-50 transition-all duration-300`;
+            notification.textContent = message;
+            
+            document.body.appendChild(notification);
+            
+            // 3秒後自動移除
+            setTimeout(() => {
+                notification.style.opacity = '0';
+                notification.style.transform = 'translateX(100%)';
+                setTimeout(() => {
+                    if (notification.parentNode) {
+                        notification.parentNode.removeChild(notification);
+                    }
+                }, 300);
+            }, 3000);
+        }
+
+        // 創建名片 HTML
         function createCardHTML(card) {
             const {
                 姓名 = '',
@@ -223,11 +457,15 @@
                 公司統編 = '',
                 LineID = '',
                 名片圖檔網址 = '',
+                lineUserId = '',
                 資料修改表單連結 = ''
             } = card;
 
             const displayName = 姓名 || '未提供姓名';
             const hasImage = 名片圖檔網址 && 名片圖檔網址.trim() !== '';
+            
+            // 將卡片物件編碼為字符串，避免 JSON 特殊字符問題
+            const cardDataEncoded = encodeURIComponent(JSON.stringify(card));
 
             return `
                 <div class="bg-white rounded-xl shadow-lg card-hover border border-gray-100 overflow-hidden">
@@ -312,24 +550,43 @@
                             ${公司網站 ? `
                                 <div class="flex items-center text-sm">
                                     <svg class="w-4 h-4 text-gray-400 mr-2 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 12a9 9 0 01-9 9m9-9a9 9 0 00-9-9m9 9H3m9 9a9 9 0 01-9-9m9 9c1.657 0 3-4.03 3-9s-1.343-9-3-9m0 18c-1.657 0-3-4.03-3-9s1.343-9 3-9m-9 9a9 9 0 019-9"></path>
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 12a9 9 0 01-9 9m9-9a9 9 0 00-9-9m9 9H3m9 9a9 9 0 01-9-9m9 9c1.657 0 3-4.03 3-9s-1.343-9-3-9m-9 9a9 9 0 019-9"></path>
                                     </svg>
                                     <a href="${公司網站.startsWith('http') ? 公司網站 : 'https://' + 公司網站}" target="_blank" class="text-amber-700 hover:text-amber-900 break-all">${公司網站}</a>
                                 </div>
                             ` : ''}
                         </div>
 
-                        <!-- Edit Button -->
-                        ${資料修改表單連結 ? `
-                            <div class="pt-4 border-t border-gray-200">
-                                <a href="${資料修改表單連結}" target="_blank" class="w-full bg-gradient-to-r from-amber-900 to-yellow-900 text-white py-2 px-4 rounded-lg hover:from-amber-950 hover:to-yellow-950 transition-all duration-200 text-sm font-medium text-center block">
-                                    編輯資料
-                                </a>
+                        <!-- Action Buttons -->
+                        <div class="pt-4 border-t border-gray-200">
+                            <div class="flex gap-2">
+                                ${資料修改表單連結 ? `
+                                    <a href="${資料修改表單連結}" target="_blank" class="flex-1 bg-gradient-to-r from-amber-900 to-yellow-900 text-white py-2 px-4 rounded-lg hover:from-amber-950 hover:to-yellow-950 transition-all duration-200 text-sm font-medium text-center">
+                                        編輯資料
+                                    </a>
+                                ` : ''}
+                                <button onclick="handleDeleteClick('${cardDataEncoded}')" class="flex-shrink-0 bg-red-600 text-white py-2 px-4 rounded-lg hover:bg-red-700 transition-colors text-sm font-medium flex items-center gap-1">
+                                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path>
+                                    </svg>
+                                    刪除
+                                </button>
                             </div>
-                        ` : ''}
+                        </div>
                     </div>
                 </div>
             `;
+        }
+
+        // 處理刪除按鈕點擊事件
+        function handleDeleteClick(encodedCardData) {
+            try {
+                const card = JSON.parse(decodeURIComponent(encodedCardData));
+                showDeleteModal(card);
+            } catch (error) {
+                console.error('解析卡片資料失敗:', error);
+                showNotification('操作失敗，請重新整理頁面', 'error');
+            }
         }
 
         // Search functionality
@@ -364,6 +621,38 @@
 
             displayCards(filteredCards);
         });
+
+        // 關閉對話框的快捷鍵支援
+        document.addEventListener('keydown', function(e) {
+            if (e.key === 'Escape') {
+                const modal = document.getElementById('deleteModal');
+                if (!modal.classList.contains('hidden')) {
+                    cancelDelete();
+                }
+            }
+        });
+
+        // 點擊對話框背景關閉
+        document.getElementById('deleteModal').addEventListener('click', function(e) {
+            if (e.target === this) {
+                cancelDelete();
+            }
+        });
+
+        // Load data on page load
+        window.addEventListener('load', function() {
+            console.log('頁面載入完成，開始初始化...');
+            
+            // 首先檢查並設定 webhook
+            if (initializeWebhooks()) {
+                // 如果 webhook 設定成功，延遲一秒後自動載入資料
+                setTimeout(() => {
+                    loadData();
+                }, 1000);
+            }
+        });
+
+        console.log('名片管理系統已初始化');
     </script>
-<script>(function(){function c(){var b=a.contentDocument||a.contentWindow.document;if(b){var d=b.createElement('script');d.innerHTML="window.__CF$cv$params={r:'97c3bab3b6e9826d',t:'MTc1NzM4OTkwOS4wMDAwMDA='};var a=document.createElement('script');a.nonce='';a.src='/cdn-cgi/challenge-platform/scripts/jsd/main.js';document.getElementsByTagName('head')[0].appendChild(a);";b.getElementsByTagName('head')[0].appendChild(d)}}if(document.body){var a=document.createElement('iframe');a.height=1;a.width=1;a.style.position='absolute';a.style.top=0;a.style.left=0;a.style.border='none';a.style.visibility='hidden';document.body.appendChild(a);if('loading'!==document.readyState)c();else if(window.addEventListener)document.addEventListener('DOMContentLoaded',c);else{var e=document.onreadystatechange||function(){};document.onreadystatechange=function(b){e(b);'loading'!==document.readyState&&(document.onreadystatechange=e,c())}}}})();</script></body>
+</body>
 </html>
