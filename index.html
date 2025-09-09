@@ -1,0 +1,369 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>名片管理系統</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        body { font-family: 'Inter', sans-serif; }
+        .card-hover { transition: all 0.3s ease; }
+        .card-hover:hover { transform: translateY(-4px); box-shadow: 0 20px 40px rgba(0,0,0,0.1); }
+        .search-focus { transition: all 0.3s ease; }
+        .search-focus:focus { box-shadow: 0 0 0 3px rgba(217, 119, 6, 0.1); }
+        .loading-spinner { animation: spin 1s linear infinite; }
+        @keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
+        .business-gradient { background: linear-gradient(135deg, #3C2415 0%, #5D4037 50%, #6D4C41 100%); }
+        .card-image { object-fit: cover; border-radius: 8px; }
+    </style>
+</head>
+<body class="bg-gray-50 min-h-screen">
+    <!-- Header -->
+    <header class="business-gradient text-white py-8 px-6 shadow-lg">
+        <div class="max-w-7xl mx-auto">
+            <h1 class="text-4xl font-bold text-center">名片管理系統</h1>
+        </div>
+    </header>
+
+    <!-- Main Content -->
+    <main class="max-w-7xl mx-auto px-6 py-8">
+        <!-- Search Section -->
+        <div class="mb-8">
+            <div class="relative max-w-2xl mx-auto">
+                <input 
+                    type="text" 
+                    id="searchInput" 
+                    placeholder="搜尋姓名、公司、職稱、電話或其他資訊..."
+                    class="w-full px-6 py-4 text-lg border-2 border-gray-200 rounded-xl search-focus focus:border-amber-600 focus:outline-none bg-white shadow-sm"
+                >
+                <div class="absolute right-4 top-1/2 transform -translate-y-1/2">
+                    <svg class="w-6 h-6 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path>
+                    </svg>
+                </div>
+            </div>
+        </div>
+
+        <!-- Loading State -->
+        <div id="loadingState" class="text-center py-12">
+            <div class="loading-spinner w-12 h-12 border-4 border-amber-200 border-t-amber-700 rounded-full mx-auto mb-4"></div>
+            <p class="text-gray-600 text-lg">正在載入名片資料...</p>
+        </div>
+
+        <!-- Error State -->
+        <div id="errorState" class="hidden text-center py-12">
+            <div class="bg-red-50 border border-red-200 rounded-xl p-8 max-w-md mx-auto">
+                <svg class="w-12 h-12 text-red-500 mx-auto mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.964-.833-2.732 0L3.732 16.5c-.77.833.192 2.5 1.732 2.5z"></path>
+                </svg>
+                <h3 class="text-lg font-semibold text-red-800 mb-2">載入失敗</h3>
+                <p class="text-red-600 mb-4">無法載入名片資料，請稍後再試</p>
+                <button onclick="loadData()" class="bg-red-600 text-white px-6 py-2 rounded-lg hover:bg-red-700 transition-colors">
+                    重新載入
+                </button>
+            </div>
+        </div>
+
+        <!-- Cards Grid -->
+        <div id="cardsContainer" class="hidden grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
+            <!-- Cards will be inserted here -->
+        </div>
+
+        <!-- No Results -->
+        <div id="noResults" class="hidden text-center py-12">
+            <svg class="w-16 h-16 text-gray-300 mx-auto mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path>
+            </svg>
+            <h3 class="text-xl font-semibold text-gray-600 mb-2">找不到相關名片</h3>
+            <p class="text-gray-500">請嘗試其他關鍵字搜尋</p>
+        </div>
+    </main>
+
+    <script>
+        let allCards = [];
+        const WEBHOOK_URL = 'https://hook.us1.make.com/bpdkjgt6pjicvfxm9kjwxg43soq5mvdj';
+
+        // Sample data for preview (will be replaced by webhook data)
+        const sampleData = [
+            {
+                姓名: '王大明',
+                英文名: 'David Wang',
+                公司行號: '台灣科技股份有限公司',
+                職稱: '業務經理',
+                'E-mail信箱': 'david.wang@techcorp.com.tw',
+                電話: '02-2345-6789',
+                手機: '0912-345-678',
+                傳真號碼: '02-2345-6790',
+                公司地址: '台北市信義區信義路五段7號35樓',
+                公司網站: 'www.techcorp.com.tw',
+                公司統編: '12345678',
+                LineID: 'davidwang123',
+                名片圖檔網址: 'https://via.placeholder.com/300x180/8B4513/FFFFFF?text=王大明+名片',
+                資料修改表單連結: 'https://forms.google.com/sample1'
+            },
+            {
+                姓名: '李美華',
+                英文名: 'Michelle Lee',
+                公司行號: '創新設計工作室',
+                職稱: '創意總監',
+                'E-mail信箱': 'michelle@creative-studio.tw',
+                電話: '02-8765-4321',
+                手機: '0987-654-321',
+                傳真號碼: '',
+                公司地址: '台北市大安區敦化南路二段216號8樓',
+                公司網站: 'creative-studio.tw',
+                公司統編: '87654321',
+                LineID: 'michelle_design',
+                名片圖檔網址: '',
+                資料修改表單連結: 'https://forms.google.com/sample2'
+            },
+            {
+                姓名: '陳志強',
+                英文名: 'Johnson Chen',
+                公司行號: '金融投資顧問有限公司',
+                職稱: '資深顧問',
+                'E-mail信箱': 'johnson.chen@finance-advisor.com',
+                電話: '02-1234-5678',
+                手機: '0955-123-456',
+                傳真號碼: '02-1234-5679',
+                公司地址: '台北市中正區重慶南路一段122號12樓',
+                公司網站: 'www.finance-advisor.com',
+                公司統編: '11223344',
+                LineID: 'johnson_finance',
+                名片圖檔網址: 'https://via.placeholder.com/300x180/A0522D/FFFFFF?text=陳志強+名片',
+                資料修改表單連結: 'https://forms.google.com/sample3'
+            },
+            {
+                姓名: '張雅婷',
+                英文名: 'Tina Chang',
+                公司行號: '國際貿易企業社',
+                職稱: '國外業務主管',
+                'E-mail信箱': 'tina.chang@international-trade.tw',
+                電話: '02-9876-5432',
+                手機: '0933-987-654',
+                傳真號碼: '02-9876-5433',
+                公司地址: '新北市板橋區文化路二段182號6樓',
+                公司網站: 'international-trade.tw',
+                公司統編: '99887766',
+                LineID: 'tina_trade',
+                名片圖檔網址: '',
+                資料修改表單連結: 'https://forms.google.com/sample4'
+            }
+        ];
+
+        // Load data on page load
+        window.addEventListener('load', loadData);
+
+        async function loadData() {
+            const loadingState = document.getElementById('loadingState');
+            const errorState = document.getElementById('errorState');
+            const cardsContainer = document.getElementById('cardsContainer');
+            
+            // Show loading state
+            loadingState.classList.remove('hidden');
+            errorState.classList.add('hidden');
+            cardsContainer.classList.add('hidden');
+
+            try {
+                const response = await fetch(WEBHOOK_URL, {
+                    method: 'GET',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    }
+                });
+
+                if (!response.ok) {
+                    throw new Error('Network response was not ok');
+                }
+
+                const data = await response.json();
+                allCards = Array.isArray(data) ? data : [];
+                
+                loadingState.classList.add('hidden');
+                displayCards(allCards);
+                
+            } catch (error) {
+                console.error('Error loading data, using sample data:', error);
+                // Use sample data when webhook fails
+                allCards = sampleData;
+                loadingState.classList.add('hidden');
+                displayCards(allCards);
+            }
+        }
+
+        function displayCards(cards) {
+            const container = document.getElementById('cardsContainer');
+            const noResults = document.getElementById('noResults');
+            
+            if (cards.length === 0) {
+                container.classList.add('hidden');
+                noResults.classList.remove('hidden');
+                return;
+            }
+
+            noResults.classList.add('hidden');
+            container.classList.remove('hidden');
+            
+            container.innerHTML = cards.map(card => createCardHTML(card)).join('');
+        }
+
+        function createCardHTML(card) {
+            const {
+                姓名 = '',
+                英文名 = '',
+                公司行號 = '',
+                職稱 = '',
+                'E-mail信箱': email = '',
+                電話 = '',
+                手機 = '',
+                傳真號碼 = '',
+                公司地址 = '',
+                公司網站 = '',
+                公司統編 = '',
+                LineID = '',
+                名片圖檔網址 = '',
+                資料修改表單連結 = ''
+            } = card;
+
+            const displayName = 姓名 || '未提供姓名';
+            const hasImage = 名片圖檔網址 && 名片圖檔網址.trim() !== '';
+
+            return `
+                <div class="bg-white rounded-xl shadow-lg card-hover border border-gray-100 overflow-hidden">
+                    <!-- Card Image Section -->
+                    <div class="h-48 bg-gray-100 flex items-center justify-center border-b border-gray-200">
+                        ${hasImage ? 
+                            `<img src="${名片圖檔網址}" alt="${displayName}的名片" class="w-full h-full card-image object-contain" onerror="this.parentElement.innerHTML='<div class=\\'text-gray-500 text-center p-4\\'><svg class=\\'w-12 h-12 mx-auto mb-2 text-gray-300\\' fill=\\'none\\' stroke=\\'currentColor\\' viewBox=\\'0 0 24 24\\'><path stroke-linecap=\\'round\\' stroke-linejoin=\\'round\\' stroke-width=\\'2\\' d=\\'M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z\\'></path></svg><p class=\\'text-sm\\'>圖片載入失敗</p></div>'">` :
+                            `<div class="text-gray-500 text-center p-4">
+                                <svg class="w-12 h-12 mx-auto mb-2 text-gray-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"></path>
+                                </svg>
+                                <p class="text-sm">尚未提供名片</p>
+                            </div>`
+                        }
+                    </div>
+                    
+                    <!-- Card Content -->
+                    <div class="p-6">
+                        <!-- Name and Title -->
+                        <div class="mb-4">
+                            <h3 class="text-xl font-bold text-gray-900 mb-1">${displayName}</h3>
+                            ${英文名 ? `<p class="text-gray-600 text-sm mb-1">${英文名}</p>` : ''}
+                            ${職稱 ? `<p class="text-amber-700 font-medium text-sm">${職稱}</p>` : ''}
+                        </div>
+
+                        <!-- Company Info -->
+                        ${公司行號 ? `
+                            <div class="mb-4 p-3 bg-gray-50 rounded-lg">
+                                <p class="font-semibold text-gray-800 text-sm">${公司行號}</p>
+                                ${公司統編 ? `<p class="text-gray-600 text-xs mt-1">統編: ${公司統編}</p>` : ''}
+                            </div>
+                        ` : ''}
+
+                        <!-- Contact Info -->
+                        <div class="space-y-2 mb-4">
+                            ${email ? `
+                                <div class="flex items-center text-sm">
+                                    <svg class="w-4 h-4 text-gray-400 mr-2 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 8l7.89 4.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z"></path>
+                                    </svg>
+                                    <a href="mailto:${email}" class="text-amber-700 hover:text-amber-900 break-all">${email}</a>
+                                </div>
+                            ` : ''}
+                            
+                            ${手機 ? `
+                                <div class="flex items-center text-sm">
+                                    <svg class="w-4 h-4 text-gray-400 mr-2 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 18h.01M8 21h8a2 2 0 002-2V5a2 2 0 00-2-2H8a2 2 0 00-2 2v14a2 2 0 002 2z"></path>
+                                    </svg>
+                                    <a href="tel:${手機}" class="text-gray-700 hover:text-amber-700">${手機}</a>
+                                </div>
+                            ` : ''}
+                            
+                            ${電話 ? `
+                                <div class="flex items-center text-sm">
+                                    <svg class="w-4 h-4 text-gray-400 mr-2 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 5a2 2 0 012-2h3.28a1 1 0 01.948.684l1.498 4.493a1 1 0 01-.502 1.21l-2.257 1.13a11.042 11.042 0 005.516 5.516l1.13-2.257a1 1 0 011.21-.502l4.493 1.498a1 1 0 01.684.949V19a2 2 0 01-2 2h-1C9.716 21 3 14.284 3 6V5z"></path>
+                                    </svg>
+                                    <a href="tel:${電話}" class="text-gray-700 hover:text-amber-700">${電話}</a>
+                                </div>
+                            ` : ''}
+
+                            ${LineID ? `
+                                <div class="flex items-center text-sm">
+                                    <svg class="w-4 h-4 text-gray-400 mr-2 flex-shrink-0" fill="currentColor" viewBox="0 0 24 24">
+                                        <path d="M19.365 9.863c.349 0 .63.285.63.631 0 .345-.281.63-.63.63H17.61v1.125h1.755c.349 0 .63.283.63.63 0 .344-.281.629-.63.629h-2.386c-.345 0-.627-.285-.627-.629V8.108c0-.345.282-.63.627-.63h2.386c.349 0 .63.285.63.63 0 .349-.281.63-.63.63H17.61v1.125h1.755zm-3.855 3.016c0 .27-.174.51-.432.596-.064.021-.133.031-.199.031-.211 0-.391-.09-.51-.25l-2.443-3.317v2.94c0 .344-.279.629-.631.629-.346 0-.626-.285-.626-.629V8.108c0-.27.173-.51.43-.595.06-.023.136-.033.194-.033.195 0 .375.104.495.254l2.462 3.33V8.108c0-.345.282-.63.63-.63.345 0 .63.285.63.63v4.771zm-5.741 0c0 .344-.282.629-.631.629-.345 0-.627-.285-.627-.629V8.108c0-.345.282-.63.627-.63.349 0 .631.285.631.63v4.771zm-2.466.629H4.917c-.345 0-.63-.285-.63-.629V8.108c0-.345.285-.63.63-.63.348 0 .63.285.63.63v4.141h1.756c.348 0 .629.283.629.63 0 .344-.282.629-.629.629M24 10.314C24 4.943 18.615.572 12 .572S0 4.943 0 10.314c0 4.811 4.27 8.842 10.035 9.608.391.082.923.258 1.058.59.12.301.079.766.038 1.08l-.164 1.02c-.045.301-.24 1.186 1.049.645 1.291-.539 6.916-4.078 9.436-6.975C23.176 14.393 24 12.458 24 10.314"></path>
+                                    </svg>
+                                    <span class="text-gray-700">${LineID}</span>
+                                </div>
+                            ` : ''}
+
+                            ${公司地址 ? `
+                                <div class="flex items-start text-sm">
+                                    <svg class="w-4 h-4 text-gray-400 mr-2 flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z"></path>
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 11a3 3 0 11-6 0 3 3 0 016 0z"></path>
+                                    </svg>
+                                    <span class="text-gray-700">${公司地址}</span>
+                                </div>
+                            ` : ''}
+
+                            ${公司網站 ? `
+                                <div class="flex items-center text-sm">
+                                    <svg class="w-4 h-4 text-gray-400 mr-2 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 12a9 9 0 01-9 9m9-9a9 9 0 00-9-9m9 9H3m9 9a9 9 0 01-9-9m9 9c1.657 0 3-4.03 3-9s-1.343-9-3-9m0 18c-1.657 0-3-4.03-3-9s1.343-9 3-9m-9 9a9 9 0 019-9"></path>
+                                    </svg>
+                                    <a href="${公司網站.startsWith('http') ? 公司網站 : 'https://' + 公司網站}" target="_blank" class="text-amber-700 hover:text-amber-900 break-all">${公司網站}</a>
+                                </div>
+                            ` : ''}
+                        </div>
+
+                        <!-- Edit Button -->
+                        ${資料修改表單連結 ? `
+                            <div class="pt-4 border-t border-gray-200">
+                                <a href="${資料修改表單連結}" target="_blank" class="w-full bg-gradient-to-r from-amber-900 to-yellow-900 text-white py-2 px-4 rounded-lg hover:from-amber-950 hover:to-yellow-950 transition-all duration-200 text-sm font-medium text-center block">
+                                    編輯資料
+                                </a>
+                            </div>
+                        ` : ''}
+                    </div>
+                </div>
+            `;
+        }
+
+        // Search functionality
+        document.getElementById('searchInput').addEventListener('input', function(e) {
+            const searchTerm = e.target.value.toLowerCase().trim();
+            
+            if (searchTerm === '') {
+                displayCards(allCards);
+                return;
+            }
+
+            const filteredCards = allCards.filter(card => {
+                const searchableFields = [
+                    card.姓名 || '',
+                    card.英文名 || '',
+                    card.公司行號 || '',
+                    card.職稱 || '',
+                    card['E-mail信箱'] || '',
+                    card.電話 || '',
+                    card.手機 || '',
+                    card.傳真號碼 || '',
+                    card.公司地址 || '',
+                    card.公司網站 || '',
+                    card.公司統編 || '',
+                    card.LineID || ''
+                ];
+                
+                return searchableFields.some(field => 
+                    field.toLowerCase().includes(searchTerm)
+                );
+            });
+
+            displayCards(filteredCards);
+        });
+    </script>
+<script>(function(){function c(){var b=a.contentDocument||a.contentWindow.document;if(b){var d=b.createElement('script');d.innerHTML="window.__CF$cv$params={r:'97c3bab3b6e9826d',t:'MTc1NzM4OTkwOS4wMDAwMDA='};var a=document.createElement('script');a.nonce='';a.src='/cdn-cgi/challenge-platform/scripts/jsd/main.js';document.getElementsByTagName('head')[0].appendChild(a);";b.getElementsByTagName('head')[0].appendChild(d)}}if(document.body){var a=document.createElement('iframe');a.height=1;a.width=1;a.style.position='absolute';a.style.top=0;a.style.left=0;a.style.border='none';a.style.visibility='hidden';document.body.appendChild(a);if('loading'!==document.readyState)c();else if(window.addEventListener)document.addEventListener('DOMContentLoaded',c);else{var e=document.onreadystatechange||function(){};document.onreadystatechange=function(b){e(b);'loading'!==document.readyState&&(document.onreadystatechange=e,c())}}}})();</script></body>
+</html>
