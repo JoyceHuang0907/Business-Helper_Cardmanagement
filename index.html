@@ -57,7 +57,7 @@
                 <input 
                     type="text" 
                     id="searchInput" 
-                    placeholder="搜尋姓名、公司、職稱、電話或其他資訊..."
+                    placeholder="搜尋姓名、暱稱、公司、職稱、電話或其他資訊..."
                     class="w-full px-6 py-4 text-lg border-2 border-gray-200 rounded-xl search-focus focus:border-amber-600 focus:outline-none bg-white shadow-sm"
                 >
                 <div class="absolute right-4 top-1/2 transform -translate-y-1/2">
@@ -130,11 +130,12 @@
         let LOAD_WEBHOOK_URL = '';
         let DELETE_WEBHOOK_URL = '';
 
-        // 您提供的真實資料（作為備用）
+        // 您提供的真實資料（作為備用） - 已加入暱稱欄位
         const realData = [
             {
                 "姓名": "李姿瑩",
                 "英文名": "Zin",
+                "暱稱": "阿瑩",
                 "公司行號": "禹動科技整合股份有限公司",
                 "職稱": "專案顧問 Project Consultant",
                 "E-mail信箱": "zin@smart4a.tw",
@@ -152,6 +153,7 @@
             {
                 "姓名": "黃竹瑄",
                 "英文名": "Joyce",
+                "暱稱": "KK",
                 "公司行號": "禹動科技整合股份有限公司",
                 "職稱": "專案經理 Project Manager",
                 "E-mail信箱": "joyce@smart4a.tw",
@@ -441,11 +443,12 @@
             }, 3000);
         }
 
-        // 創建名片 HTML
+        // 創建名片 HTML（注意：暱稱不會顯示在卡片上）
         function createCardHTML(card) {
             const {
                 姓名 = '',
                 英文名 = '',
+                暱稱 = '', // 暱稱欄位（不顯示）
                 公司行號 = '',
                 職稱 = '',
                 'E-mail信箱': email = '',
@@ -589,7 +592,7 @@
             }
         }
 
-        // Search functionality
+        // 搜尋功能（已修改為包含暱稱欄位）
         document.getElementById('searchInput').addEventListener('input', function(e) {
             const searchTerm = e.target.value.toLowerCase().trim();
             
@@ -602,6 +605,7 @@
                 const searchableFields = [
                     card.姓名 || '',
                     card.英文名 || '',
+                    card.暱稱 || '', // 加入暱稱欄位到搜尋範圍
                     card.公司行號 || '',
                     card.職稱 || '',
                     card['E-mail信箱'] || '',
@@ -652,7 +656,7 @@
             }
         });
 
-        console.log('名片管理系統已初始化');
+        console.log('名片管理系統已初始化 - 支援暱稱搜尋功能');
     </script>
 </body>
 </html>
